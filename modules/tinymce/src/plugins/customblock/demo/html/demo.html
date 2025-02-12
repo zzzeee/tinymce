@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <title>Plugin: customblock Demo</title>
+</head>
+
+<body>
+  <h2>Plugin: customblock Demo</h2>
+  <div id="ephox-ui">
+    <textarea name="editor" id="editor" rows="15" cols="80" class="tinymce">
+        <p>这是一个测试内容。</p>
+        <p>点击工具栏上的 customblock 按钮来测试插件功能。</p>
+      </textarea>
+  </div>
+
+  <script src="../../../../../js/tinymce/tinymce.js"></script>
+  <script src="../../../../../scratch/demos/plugins/customblock/demo.js"></script>
+  <script>
+    const uploadImageToOss = async (blob, dir, filename) => {
+      const ret = {
+        originalFilename: filename,
+        uploadedFilename: '',
+        url: ''
+      };
+
+      const ext = filename.substring(filename.lastIndexOf('.') + 1);
+
+      try {
+        const policyResponse = await fetch(`http://localhost:8012/api/v2/oss_policy?dir=${dir}&ext=${ext}`);
+        const { data } = await policyResponse.json();
+
+        if (data?.policy) {
+          ret.uploadedFilename = data.policy.filename;
+          const formData = new FormData();
+          formData.append('key', ret.uploadedFilename);
+          formData.append('policy', data.policy.policy);
+          formData.append('OSSAccessKeyId', data.policy.accessid);
+          formData.append('signature', data.policy.signature);
+          formData.append('success_action_status', '200');
+          formData.append('file', blob, filename);
+
+          const response = await fetch(data.policy.host, {
+            method: 'POST',
+            body: formData
+          });
+
+          if (response.status === 200) {
+            ret.url = `${data.policy.host || 'http://img.antway.cn'}/${ret.uploadedFilename}`;
+          }
+        }
+        return ret;
+      } catch (error) {
+        console.error('上传失败:', error);
+        throw new Error('文件上传失败');
+      }
+    };
+
+    tinymce.init({
+      selector: 'textarea#editor',
+      menubar: 'file edit view insert',
+      menu: {
+        insert: {  // 定义 `insert` 菜单
+          title: 'Insert',
+          items: 'customblock | Horizontal line'  // 将自定义插件添加到菜单项中
+        }
+      },
+      // plugins: 'customblock',
+      // toolbar: 'customblock',
+      plugins: 'directionality code lists customblock image',
+      toolbar: 'ltr rtl code | bullist numlist | customblock | image',
+      height: 600,
+      images_upload_handler: async (blobInfo) => {
+        try {
+          const response = await uploadImageToOss(blobInfo.blob(), 'email_template', blobInfo.filename())
+          return response.url
+        } catch (error) {
+          console.error('图片上传失败:', error)
+          throw new Error('图片上传失败')
+        }
+      },
+      // 配置图片上传相关选项
+      image_advtab: true,
+      image_uploadtab: true,
+      images_reuse_filename: true,
+      automatic_uploads: true,
+    });
+  </script>
+</body>
+
+</html>
