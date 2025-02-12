@@ -27,7 +27,6 @@ interface DialogData {
 
 const buildBlockStyles = (data: DialogData): string => {
   const styles: string[] = [];
-
   if (data.width) {
     styles.push(`width: ${data.width}`);
   }
@@ -43,19 +42,18 @@ const buildBlockStyles = (data: DialogData): string => {
   if (data.bgColor) {
     styles.push(`background-color: ${data.bgColor}`);
   }
-  if (data.borderWidth) {
+  // 处理边框
+  if (data.borderWidth && data.borderWidth !== '0px' && data.bgColor && data.borderStyle && data.borderStyle !== 'none') {
     styles.push(`border-width: ${data.borderWidth}`);
-  }
-  if (data.borderStyle) {
     styles.push(`border-style: ${data.borderStyle}`);
+    styles.push(`border-color: ${data.borderColor}`);
   }
   // 处理阴影
-  if (data.shadowX || data.shadowY || data.shadowBlur || data.shadowColor) {
+  if (data.shadowX && data.shadowY && data.shadowBlur && data.shadowColor) {
     styles.push(`box-shadow: ${data.shadowX} ${data.shadowY} ${data.shadowBlur} ${data.shadowColor}`);
   }
-
   // 处理背景图
-  if (data.backgroundUrl) {
+  if (data.backgroundUrl && data.backgroundUrl !== 'none') {
     styles.push(`background-image: url('${data.backgroundUrl}')`);
     if (data.backgroundSize) {
       styles.push(`background-size: ${data.backgroundSize}`);
@@ -93,7 +91,8 @@ const insertBlock = (editor: Editor, data: DialogData): void => {
 };
 
 const updateBlock = (editor: Editor, data: DialogData, block: HTMLElement): void => {
-  block.style.cssText = buildBlockStyles(data);
+  const styles = buildBlockStyles(data);
+  editor.execCommand('mceCustomBlockUpdate', false, { block, styles });
 };
 
 const openDialog = (editor: Editor, data?: DialogData, block?: HTMLElement): void => {

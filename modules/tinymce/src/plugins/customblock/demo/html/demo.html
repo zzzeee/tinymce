@@ -67,8 +67,8 @@
       },
       // plugins: 'customblock',
       // toolbar: 'customblock',
-      plugins: 'directionality code lists customblock image',
-      toolbar: 'ltr rtl code | bullist numlist | customblock | image',
+      plugins: 'directionality code lists customblock image table',
+      toolbar: 'ltr rtl code | bullist numlist | customblock | image | table',
       height: 600,
       images_upload_handler: async (blobInfo) => {
         try {
@@ -84,6 +84,25 @@
       image_uploadtab: true,
       images_reuse_filename: true,
       automatic_uploads: true,
+      setup: function(editor) {
+        // 监听内容变化
+        editor.on('Change', () => {
+          console.log('编辑器内容变化：', editor.getContent());
+        });
+
+        // 监听源码模式切换
+        editor.on('BeforeSetContent', (e) => {
+          if (e.source === 'source') {
+            console.log('切换到源码模式前的内容：', e.content);
+          }
+        });
+
+        editor.on('GetContent', (e) => {
+          if (e.source === 'source') {
+            console.log('获取源码模式的内容：', e.content);
+          }
+        });
+      }
     });
   </script>
 </body>

@@ -10,7 +10,6 @@ import { registerButtons } from './ui/Buttons';
 const pluginStyles = `
 .custom-block-wrapper {
   position: relative;
-  margin: 1em 0;
   cursor: pointer;
 }
 
@@ -20,13 +19,6 @@ const pluginStyles = `
   cursor: text;
   white-space: pre-wrap;
   word-wrap: break-word;
-  border: 1px solid transparent;
-}
-
-/* 选中状态样式 */
-.custom-block-wrapper.selected > .custom-block {
-  border-color: #4099ff;
-  box-shadow: 0 0 0 1px #4099ff;
 }
 
 /* 确保图标容器始终显示在最上层 */

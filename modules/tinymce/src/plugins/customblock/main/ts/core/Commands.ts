@@ -1,6 +1,7 @@
 import { Fun } from '@ephox/katamari';
 
 import Editor from 'tinymce/core/api/Editor';
+import { SetContentEvent, GetContentEvent } from 'tinymce/core/api/EventTypes';
 import { EditorEvent } from 'tinymce/core/api/util/EventDispatcher';
 
 import { Options } from '../api/Options';
@@ -10,7 +11,7 @@ import { openDialog } from '../ui/Dialog';
 const getStyleData = (element: HTMLElement) => {
   const styles = window.getComputedStyle(element);
   // 处理 boxShadow 的特殊情况
-  let shadowX = '0px', shadowY = '0px', shadowBlur = '0px', shadowColor = 'transparent';
+  let shadowX = '', shadowY = '', shadowBlur = '', shadowColor = 'transparent';
   const boxShadow = styles.boxShadow;
   if (boxShadow && boxShadow !== 'none' && boxShadow !== '') {
     // 先处理括号内的内容，去掉括号内的空格
@@ -24,7 +25,7 @@ const getStyleData = (element: HTMLElement) => {
       [ shadowX, shadowY, shadowBlur, shadowColor ] = parts;
     }
   }
-  return {
+  const stylesData: any = {
     width: element.style.width || '',
     height: element.style.height || '',
     margin: element.style.margin || '',
@@ -33,16 +34,20 @@ const getStyleData = (element: HTMLElement) => {
     borderWidth: styles.borderWidth || '',
     borderStyle: styles.borderStyle || '',
     borderColor: styles.borderColor || '',
-    shadowX,
-    shadowY,
-    shadowBlur,
-    shadowColor,
-    backgroundSize: styles.backgroundSize || '',
-    backgroundPosition: styles.backgroundPosition || '',
-    backgroundRepeat: styles.backgroundRepeat || '',
-    backgroundUrl: (styles.backgroundImage && styles.backgroundImage !== 'none') ?
-      styles.backgroundImage.replace(/^url\(['"](.+)['"]\)$/, '$1') : 'none'
   };
+  if (shadowX && shadowY && shadowBlur && shadowColor) {
+    stylesData.shadowX = shadowX;
+    stylesData.shadowY = shadowY;
+    stylesData.shadowBlur = shadowBlur;
+    stylesData.shadowColor = shadowColor;
+  }
+  if (styles.backgroundImage && styles.backgroundImage !== 'none') {
+    stylesData.backgroundUrl = styles.backgroundImage.replace(/^url\(['"](.+)['"]\)$/, '$1');
+    stylesData.backgroundSize = styles.backgroundSize || '';
+    stylesData.backgroundPosition = styles.backgroundPosition || '';
+    stylesData.backgroundRepeat = styles.backgroundRepeat || '';
+  }
+  return stylesData;
 };
 
 // 提取创建区块工具栏的函数
@@ -136,50 +141,89 @@ const createBlockToolbar = (editor: Editor, htmlBlock: HTMLElement, wrapper: HTM
   return iconContainer;
 };
 
-// 提取初始化区块的函数
-const initializeBlock = (editor: Editor, block: HTMLElement) => {
-  // 检查当前区块是否已经被包装
-  if (!block.parentElement?.classList.contains('custom-block-wrapper')) {
+const registerCommands = (editor: Editor): void => {
+  // 确保区块内容可编辑
+  const initializeBlock = (block: HTMLElement) => {
+    // 先移除已存在的 wrapper（如果有）
+    const existingWrapper = block.closest('.custom-block-wrapper');
+    if (existingWrapper) {
+      existingWrapper.parentNode?.insertBefore(block, existingWrapper);
+      existingWrapper.remove();
+    }
+
+    // 创建新的 wrapper
     const wrapper = editor.dom.create('div', {
       class: 'custom-block-wrapper'
     });
 
-    // 将原区块移动到包装器中
     block.parentNode?.insertBefore(wrapper, block);
     wrapper.appendChild(block);
 
-    // 创建并添加工具栏
     const toolbar = createBlockToolbar(editor, block, wrapper);
     wrapper.appendChild(toolbar);
 
-    // 添加点击事件
     wrapper.addEventListener('mousedown', (e: MouseEvent) => {
       e.stopPropagation();
-      // 移除所有区块的选中状态
       editor.getBody().querySelectorAll('.custom-block-wrapper').forEach((w) => {
         w.classList.remove('selected');
       });
-      // 添加当前区块的选中状态
       wrapper.classList.add('selected');
     });
-  }
+  };
 
-  // 初始化所有子区块
-  const childBlocks = block.querySelectorAll('.custom-block');
-  childBlocks.forEach((childBlock) => {
-    // 确保子区块还没有被初始化
-    if (!childBlock.parentElement?.classList.contains('custom-block-wrapper')) {
-      initializeBlock(editor, childBlock as HTMLElement);
+  // 添加命令
+  editor.addCommand('mceCustomBlockUpdate', (ui: boolean, value: any) => {
+    const block = value?.block as HTMLElement;
+    const styles = value?.styles as string;
+    if (block && styles) {
+      // 更新当前区块样式
+      updateBlockStyles(block, styles);
+      // 获取当前源码内容
+      const sourceContent = editor.getContent({ source_view: true });
+      const div = document.createElement('div');
+      div.innerHTML = sourceContent;
+      // 更新源码中对应区块的样式
+      const sourceBlocks = div.querySelectorAll('.custom-block');
+      sourceBlocks.forEach((sourceBlock) => {
+        if (sourceBlock.innerHTML === block.innerHTML) {
+          updateBlockStyles(sourceBlock as HTMLElement, styles);
+        }
+      });
+      // 更新源码内容
+      editor.setContent(div.innerHTML, { source_view: true });
+      // 重新获取并初始化区块
+      setTimeout(() => {
+        editor.getBody().querySelectorAll('.custom-block').forEach((b) => {
+          if (!b.parentElement?.classList.contains('custom-block-wrapper')) {
+            initializeBlock(b as HTMLElement);
+          }
+        });
+      }, 0);
     }
   });
-};
 
-const registerCommands = (editor: Editor): void => {
-  // 添加初始化命令
-  editor.addCommand('mceCustomBlockInitialize', (ui: boolean, block: HTMLElement) => {
+  // 在切换到源码模式前处理内容
+  editor.on('GetContent', (e: EditorEvent<GetContentEvent>) => {
+    if (e.source === 'source') {
+      const div = editor.dom.create('div');
+      div.innerHTML = e.content;
+      // 移除所有工具栏和包装器，只保留区块
+      div.querySelectorAll('.custom-block-wrapper').forEach((wrapper) => {
+        const block = wrapper.querySelector('.custom-block');
+        if (block) {
+          wrapper.parentNode?.insertBefore(block, wrapper);
+          wrapper.remove();
+        }
+      });
+      div.querySelectorAll('.custom-block-icons').forEach((icons) => icons.remove());
+      e.content = div.innerHTML;
+    }
+  });
+
+  // 添加命令
+  editor.addCommand('mceCustomBlockInitialize', (_ui: boolean, block: HTMLElement) => {
     if (block) {
-      // 初始化当前区块及其所有子区块
-      initializeBlock(editor, block);
+      initializeBlock(block);
     }
   });
 
@@ -216,7 +260,7 @@ const registerCommands = (editor: Editor): void => {
     const blocks = editor.getBody().querySelectorAll('.custom-block');
     blocks.forEach((block) => {
       if (!block.parentElement?.classList.contains('custom-block-wrapper')) {
-        initializeBlock(editor, block as HTMLElement);
+        initializeBlock(block as HTMLElement);
       }
     });
   });
@@ -226,7 +270,7 @@ const registerCommands = (editor: Editor): void => {
     const blocks = editor.getBody().querySelectorAll('.custom-block');
     blocks.forEach((block) => {
       if (!block.parentElement?.classList.contains('custom-block-wrapper')) {
-        initializeBlock(editor, block as HTMLElement);
+        initializeBlock(block as HTMLElement);
       }
     });
   });
@@ -235,7 +279,7 @@ const registerCommands = (editor: Editor): void => {
   editor.on('NewBlock', (e: EditorEvent<any>) => {
     const target = e.target as HTMLElement;
     if (target?.classList?.contains('custom-block')) {
-      initializeBlock(editor, target);
+      initializeBlock(target);
     }
   });
 
@@ -255,14 +299,17 @@ const registerCommands = (editor: Editor): void => {
     }
   });
 
-  // 处理回车事件，在区块内实现软回车
+  // 处理回车事件
   editor.on('keydown', (e: EditorEvent<KeyboardEvent>) => {
     const node = editor.selection.getNode();
     const customBlock = node.closest('.custom-block');
     if (customBlock && e.keyCode === 13) { // Enter key
-      e.preventDefault();
-      editor.execCommand('InsertLineBreak');
-      return false;
+      // 如果直接在区块内（不在其他插件内），处理为软回车
+      if (node === customBlock || node.parentNode === customBlock) {
+        e.preventDefault();
+        editor.execCommand('InsertLineBreak');
+        return false;
+      }
     }
     return true;
   });
@@ -357,7 +404,7 @@ const registerCommands = (editor: Editor): void => {
       const file = e.dataTransfer.files[0];
       if (file.type.startsWith('image/')) {
         handleDropUpload(file, customBlock).catch((_error) => {
-        //   console.error('Drop upload failed:', error);
+          //   console.error('Drop upload failed:', error);
         });
       }
       return false;
@@ -385,6 +432,58 @@ const registerCommands = (editor: Editor): void => {
       }
     }
   });
+
+  // 从源码模式切换回来时重新初始化区块
+  editor.on('BeforeSetContent', (e: EditorEvent<SetContentEvent>) => {
+    if (e.source === 'source') {
+      window.setTimeout(() => {
+        const blocks = editor.getBody().querySelectorAll<HTMLElement>('.custom-block');
+        // 使用显式的 Array.from 替代 NodeList.forEach
+        Array.from(blocks).forEach((block) => {
+          if (
+            block instanceof window.HTMLElement && // 显式使用 window 对象
+            !block.parentElement?.classList.contains('custom-block-wrapper')
+          ) {
+            initializeBlock(block);
+          }
+        });
+      }, 0);
+    }
+  });
+
+  // 在序列化内容时处理区块
+  editor.on('PreProcess', (e) => {
+    const dom = editor.dom;
+    const blocks = e.node.querySelectorAll('.custom-block-wrapper');
+    blocks.forEach((wrapper) => {
+      const block = wrapper.querySelector('.custom-block');
+      if (block) {
+        // 移除包装器，保留原始区块
+        dom.remove(wrapper, true); // true 表示保留子元素
+        e.node.appendChild(block);
+      }
+    });
+
+    // 移除所有工具栏
+    const toolbars = e.node.querySelectorAll('.custom-block-icons');
+    toolbars.forEach((toolbar) => {
+      dom.remove(toolbar);
+    });
+  });
+
+  // 在反序列化内容时处理区块
+  editor.on('PostProcess', (e) => {
+    if (e.content) {
+      // 使用正则表达式移除工具栏和包装器的 HTML
+      e.content = e.content.replace(/<div class="custom-block-icons"[^>]*>.*?<\/div>/g, '');
+      e.content = e.content.replace(/<div class="custom-block-wrapper"[^>]*>([\s\S]*?)<\/div>/g, '$1');
+    }
+  });
+
+  // 更新区块样式的函数
+  const updateBlockStyles = (block: HTMLElement, styles: string) => {
+    editor.dom.setAttrib(block, 'style', styles);
+  };
 };
 
 export {
